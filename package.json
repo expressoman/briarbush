@@ -1,0 +1,27 @@
+{
+  "name": "briarbush",
+  "version": "0.0.1",
+  "description": "Connecting facebook lead gen ads to email",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WorkshopDigital/briarbush.git"
+  },
+  "author": "Matthew Rosenberg",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/WorkshopDigital/briarbush/issues"
+  },
+  "homepage": "https://github.com/WorkshopDigital/briarbush#readme",
+  "dependencies": {
+    "bluebird": "^3.4.6",
+    "moment-timezone": "^0.5.10",
+    "node-schedule": "^1.2.0",
+    "nodemailer": "^2.7.0",
+    "request": "^2.79.0",
+    "winston": "^2.3.0"
+  }
+}
