@@ -271,7 +271,7 @@ app.sendLead = function sendLead( lead ) {
 };
 
 
-app.maybeExit = function maybeExit() {
+app.done = function maybeExit() {
 	var log, dealer;
 
 	log    = app.get( 'log' );
@@ -304,12 +304,12 @@ app.run = function run() {
 	.tap( app.leadCount )
 	.map( app.leadsToObject )
 	.map( app.leadXMLADFPayload )
-	// .map( app.sendLead )
+	.map( app.sendLead )
 	.catch( function( e ) {
 		log.error( e );
 		process.exit( 1 );
 	})
-	.finally( app.maybeExit );
+	.finally( app.done );
 };
 
 
