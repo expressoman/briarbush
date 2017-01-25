@@ -2,7 +2,7 @@
   "name": "briarbush",
   "version": "0.0.1",
   "description": "Connecting facebook lead gen ads to email",
-  "main": "index.js",
+  "main": "briarbush.js",
   "scripts": {
     "test": "test"
   },
