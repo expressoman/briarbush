@@ -10,7 +10,7 @@ var Home       = process.env[ ( process.platform === 'win32' ? 'USERPROFILE' : '
 		Promise    = require( 'bluebird' ),
 		Moment     = require( 'moment-timezone' ),
 		Cron       = require( 'node-schedule' ),
-		Log        = require( 'winston' ),
+		//Log        = require( 'winston' ),
 		Request    = Promise.promisifyAll( require( 'request' ) );
 
 
