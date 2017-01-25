@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+/*!
+ * Briarbush
+ * Copyright(c) 2017 Workshop Digital
+ */
+
 var Home       = process.env[ ( process.platform === 'win32' ? 'USERPROFILE' : 'HOME' ) ],
     Package    = require( './package' ),
     Config     = require( Home + '/.brubeck/brubeck.json' ),
@@ -10,7 +15,6 @@ var Home       = process.env[ ( process.platform === 'win32' ? 'USERPROFILE' : '
 		Promise    = require( 'bluebird' ),
 		Moment     = require( 'moment-timezone' ),
 		Cron       = require( 'node-schedule' ),
-		Log        = require( 'winston' ),
 		Request    = Promise.promisifyAll( require( 'request' ) );
 
 
@@ -32,18 +36,17 @@ var app = {};
 
 
 app.init = function init() {
-	var log, mg; 
+	var mg; 
 
-	log = Logger;
 	mg  = Mailgun.client({
 		'username': 'api',
 		'key':      Config.mailgun.apiKey
 	});
 
-	log.debug( 'Initializing' );
+	Logger.debug( 'Initializing' );
 
   this.settings          = {};
-  this.settings.log      = log;
+  this.settings.log      = Logger;
   this.settings.mail     = mg;
 	this.settings.adList   = Program.ads;
 	this.settings.email    = Program.email;
@@ -61,7 +64,7 @@ app.init = function init() {
 		this.settings.interval = 240;
 	}
 
-  log.debug( 'Initializiation Complete', {
+  Logger.debug( 'Initializiation Complete', {
 		'ads':      this.settings.adList   || null,
 		'email':    this.settings.email    || null,
 		'dealer':   this.settings.dealer   || null,
@@ -278,12 +281,6 @@ app.maybeExit = function maybeExit() {
 		'timestamp': Moment().unix(),
 		'dealer':    dealer
 	});	
-
-	if( 'now' === app.get( 'schedule' ) ) {
-
-		log.info( 'Exiting Program' );
-		process.exit( 0 );
-	}
 };
 
 
@@ -316,6 +313,7 @@ app.run = function run() {
 };
 
 
+
 // Go
 (function createInstance() {
 	var ads, email, dealer, schedule;
@@ -323,9 +321,9 @@ app.run = function run() {
 	console.log( 'Creating Briar Bush instance' );
 
 	app.init()
-	.configCheck()
-	.run();
-})();
+	.configCheck();
 
+	return 'now' === app.get( 'schedule' ) ? app.run() : Cron.scheduleJob(app.get('schedule'), app.run);
+})();
 
 

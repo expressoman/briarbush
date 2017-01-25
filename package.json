@@ -2,7 +2,7 @@
   "name": "briarbush",
   "version": "0.0.1",
   "description": "Connecting facebook lead gen ads to email",
-  "main": "briarbush.js",
+  "main": "briarbush",
   "scripts": {
     "test": "test"
   },
@@ -23,7 +23,6 @@
     "mailgun.js": "^2.0.1",
     "moment-timezone": "^0.5.10",
     "node-schedule": "^1.2.0",
-    "nodemailer": "^2.7.0",
     "request": "^2.79.0",
     "winston": "^2.3.0"
   }
