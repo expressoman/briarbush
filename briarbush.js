@@ -239,17 +239,17 @@ app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
   payload  = '<?ADF version "1.0"?>';
 	payload += '<?XML version "1.0"?>';
 	payload += '<adf>';
-	payload +=   '<prospect>';
+	payload +=   '<prospect status="new">';
 	payload +=     '<id source="facebook">'+lead.id+'</id>';
 	payload +=     '<requestdate>'+lead.requestdate+'</requestdate>';
-	payload +=     '<vehicle>';
+	payload +=     '<vehicle interest="buy" status="used">';
 	payload +=       '<year>'+lead.vehicle_year+'</year>';
 	payload +=       '<make>'+lead.vehicle_make+'</make>';
 	payload +=       '<model>'+lead.vehicle_model+'</model>';
 
 	if( lead.vehicle_comment ) {
 
-		payload += '<comment>'+lead.vehicle_comment+'</comment>';
+		payload += '<comments>'+lead.vehicle_comment+'</comments>';
 
 	}
 
@@ -257,12 +257,13 @@ app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
 	payload +=     '<customer>';
 	payload +=       '<contact>';
 	payload +=         '<name part="full" type="individual">'+lead.full_name+'</name>';
+	payload +=         '<phone>Not Provided</phone>';				
 	payload +=         '<email>'+lead.email+'</email>';			
 	payload +=       '</contact>';
 
 	if( lead.customer_comment ) {
 
-		payload += '<comment>'+lead.customer_comment+'</comment>';
+		payload += '<comments>'+lead.customer_comment+'</comments>';
 
 	}
 
@@ -281,7 +282,6 @@ app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
 	payload += '</adf>';
 
 	lead['payload'] = payload;
-
 
 	return lead;
 };
@@ -348,7 +348,7 @@ app.run = function run() {
 	.map( app.flattenLead )
 	.map( app.formatVehicleInfo )
 	.map( app.leadXMLADFPayload )
-	.map( app.sendLead )
+	// .map( app.sendLead )
 	.catch( function( e ) {
 		log.error( e );
 		process.exit( 1 );
