@@ -25,10 +25,10 @@ function parseAdList( val ) {
 
 
 Program.version( Package.version )
-	.option( '-a, --ads    [ads]',    'Ad IDs seperated by a comma', parseAdList )
+	.option( '-a, --ads       [ads]', 'Ad IDs seperated by a comma', parseAdList )
 	.option( '-e, --email  <string>', 'The email address to send the leads' )
   .option( '-r, --run    <string>', 'Set an alternative cron schedule or use keyword "now" to run immediately.', '0 * * * *' )
-  .option( '-d, --dealer <string>', 'Dealer name for ADF payload' )	  
+  .option( '-d, --dealer <string>', 'Dealer name for ADF payload' )   
   .parse( process.argv );
 
 
@@ -45,13 +45,16 @@ app.init = function init() {
 
 	Logger.debug( 'Initializing' );
 
-  this.settings          = {};
-  this.settings.log      = Logger;
-  this.settings.mail     = mg;
-	this.settings.adList   = Program.ads;
-	this.settings.email    = Program.email;
-	this.settings.dealer   = Program.dealer;
-	this.settings.schedule = Program.run;  
+  this.settings                 = {};
+  this.settings.log             = Logger;
+  this.settings.mail            = mg;
+	this.settings.adList          = Program.ads;
+	this.settings.email           = Program.email;
+	this.settings.dealer          = Program.dealer;
+	this.settings.schedule        = Program.run;  
+	this.settings.vehicleComment  = Program.vehicleComment;
+	this.settings.customerComment = Program.customerComment;
+
 
 	if( 'now' !== Program.run ) {
 		var cron     = Later.parse.cron( Program.run );	
@@ -61,7 +64,7 @@ app.init = function init() {
 		this.settings.interval = interval;
 	}
 	else {
-		this.settings.interval = 240;
+		this.settings.interval = 2;
 	}
 
   Logger.debug( 'Initializiation Complete', {
@@ -120,6 +123,12 @@ app.set = function set( setting, val ) {
 app.get = function get( setting ) {
 
   return this.set( setting );
+};
+
+
+app.enabled = function enabled( setting ) {
+  
+  return Boolean( this.set( setting ) );
 };
 
 
@@ -189,7 +198,7 @@ app.concatAdData = function concatAdData( data, requests ) {
 };
 
 
-app.leadsToObject = function leadsToObject( entry ) {
+app.flattenLead = function flattenLead( entry ) {
 	var lead = {};
 
 	try {
@@ -208,6 +217,20 @@ app.leadsToObject = function leadsToObject( entry ) {
 };
 
 
+app.formatVehicleInfo = function formatVehicleInfo( lead ) {
+	var separator, vehicle;
+
+	separator = lead.vehicle_info.indexOf( ',' ) ? ',' : ' '; 
+	vehicle   = lead.vehicle_info.split( separator, 3 );
+
+	lead[ 'vehicle_year' ]  = vehicle[0] ? vehicle[0].replace(/\s/g,'') : 'Unknown';
+	lead[ 'vehicle_make' ]  = vehicle[1] ? vehicle[1].replace(/\s/g,'') : 'Unknown';
+	lead[ 'vehicle_model' ] = vehicle[2] ? vehicle[2].replace(/\s/g,'') : 'Unknown';
+
+	return lead;
+}
+
+
 app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
 	var payload, dealer;
 
@@ -217,28 +240,48 @@ app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
 	payload += '<?XML version "1.0"?>';
 	payload += '<adf>';
 	payload +=   '<prospect>';
+	payload +=     '<id source="facebook">'+lead.id+'</id>';
 	payload +=     '<requestdate>'+lead.requestdate+'</requestdate>';
 	payload +=     '<vehicle>';
-	payload +=       '<year>'+lead.year+'</year>';
-	payload +=       '<make>'+lead.make+'</make>';
-	payload +=       '<model>'+lead.year+'</model>';
+	payload +=       '<year>'+lead.vehicle_year+'</year>';
+	payload +=       '<make>'+lead.vehicle_make+'</make>';
+	payload +=       '<model>'+lead.vehicle_model+'</model>';
+
+	if( lead.vehicle_comment ) {
+
+		payload += '<comment>'+lead.vehicle_comment+'</comment>';
+
+	}
+
 	payload +=     '</vehicle>';
 	payload +=     '<customer>';
 	payload +=       '<contact>';
-	payload +=         '<name part="full">'+lead.full_name+'</name>';
-	payload +=         '<phone>'+lead.phone_number+'</phone>';
+	payload +=         '<name part="full" type="individual">'+lead.full_name+'</name>';
 	payload +=         '<email>'+lead.email+'</email>';			
 	payload +=       '</contact>';
+
+	if( lead.customer_comment ) {
+
+		payload += '<comment>'+lead.customer_comment+'</comment>';
+
+	}
+
 	payload +=     '</customer>';
 	payload +=     '<vendor>';
 	payload +=       '<contact>';
 	payload +=         '<name part="full">'+dealer+'</name>';		
 	payload +=       '</contact>';
 	payload +=     '</vendor>';
+	payload +=     '<provider>';
+	payload +=       '<contact>';
+	payload +=         '<name part="full" type="business">Workshop Digital</name>';
+	payload +=       '</contact>';
+	payload +=     '</provider>';	
 	payload +=   '</prospect>';
 	payload += '</adf>';
 
 	lead['payload'] = payload;
+
 
 	return lead;
 };
@@ -257,7 +300,7 @@ app.sendLead = function sendLead( lead ) {
 	});
 
 	return mail.messages.create( Config.mailgun.domain, {
-		'from': 'Briar Bush <mailgun@mg.workshopdigital.com>',
+		'from': 'Workshop Digital <mailgun@mg.workshopdigital.com>',
 		'to':    email,
 		'subject': 'FB Lead ' + dealer +' '+ lead.full_name,
 		'html': lead.payload
@@ -302,7 +345,8 @@ app.run = function run() {
 	.map( app.parseBody )
 	.reduce( app.concatAdData, [] )
 	.tap( app.leadCount )
-	.map( app.leadsToObject )
+	.map( app.flattenLead )
+	.map( app.formatVehicleInfo )
 	.map( app.leadXMLADFPayload )
 	.map( app.sendLead )
 	.catch( function( e ) {
@@ -318,7 +362,7 @@ app.run = function run() {
 (function createInstance() {
 	var ads, email, dealer, schedule;
 
-	console.log( 'Creating Briar Bush instance' );
+	console.log( 'Creating Briar Bush Instance' );
 
 	app.init()
 	.configCheck();
