@@ -10,25 +10,45 @@ var Home       = process.env[ ( process.platform === 'win32' ? 'USERPROFILE' : '
     Config     = require( Home + '/.brubeck/brubeck.json' ),
     Logger     = require( './logger' ),
     Program    = require( 'commander' ),    
-    Mailgun    = require( 'mailgun.js' ),
+		Mailgun    = require( 'mailgun-js' ),    
+		OS         = require( 'os' ),  
     Later      = require( 'later' ),        
 		Promise    = require( 'bluebird' ),
 		Moment     = require( 'moment-timezone' ),
 		Cron       = require( 'node-schedule' ),
+		Composer   = require( 'mailcomposer' ),
 		Request    = Promise.promisifyAll( require( 'request' ) );
 
+		Promise.config({
+		    // Enable warnings
+		    warnings: true,
+		    // Enable long stack traces
+		    longStackTraces: true,
+		    // Enable cancellation
+		    cancellation: true,
+		    // Enable monitoring
+		    monitoring: true
+		});
 
-function parseAdList( val ) {
-
+function parseAdsList( val ) {
   return val.split( ',' ).map( Number );
 };
 
 
+function parseEmailList( val ) {
+  return val.split( ',' );
+};
+
+
 Program.version( Package.version )
-	.option( '-a, --ads       [ads]', 'Ad IDs seperated by a comma', parseAdList )
-	.option( '-e, --email  <string>', 'The email address to send the leads' )
-  .option( '-r, --run    <string>', 'Set an alternative cron schedule or use keyword "now" to run immediately.', '0 * * * *' )
-  .option( '-d, --dealer <string>', 'Dealer name for ADF payload' )   
+	.option( '-a, --ads         [ads]',       'Ad IDs seperated by a comma', parseAdsList )
+	.option( '-b, --email-bcc   <string>',    'Blind carbon copy email field', null )		
+	.option( '-c, --email-cc    <string>',    'Carbon copy email field.', null )		
+  .option( '-d, --dealer      <string>',    'Dealer name for ADF payload' )   	
+	.option( '-e, --email-to    [addresses]', 'Array of addresses to send the lead.', parseEmailList )
+	.option( '-i, --interval    <int>',       'How far back, in hours, to cehck for leads. Default 24', 24  )	
+	.option( '-r, --email-reply <string>',    'Reply-to email address.', null )			
+  .option( '-s, --schedule    <string>',    'Set an alternative cron schedule or use keyword "now" to run immediately.', '0 * * * *' )
   .parse( process.argv );
 
 
@@ -36,35 +56,41 @@ var app = {};
 
 
 app.init = function init() {
-	var mg; 
+	var email, mailer;
 
-	mg  = Mailgun.client({
-		'username': 'api',
-		'key':      Config.mailgun.apiKey
-	});
+	mailer = Mailgun({
+		'domain': Config.mailgun.domain,
+		'apiKey':      Config.mailgun.apiKey
+	}); 
+
+	email = {
+		'to':      Program.emailTo,
+		'replyTo': Program.emailReply,
+		'cc':      Program.emailCc,
+		'bcc':     Program.emailBcc
+	};
 
 	Logger.debug( 'Initializing' );
 
   this.settings                 = {};
   this.settings.log             = Logger;
-  this.settings.mail            = mg;
+  this.settings.mailer          = mailer;
+	this.settings.email           = email;  
 	this.settings.adList          = Program.ads;
-	this.settings.email           = Program.email;
 	this.settings.dealer          = Program.dealer;
-	this.settings.schedule        = Program.run;  
+	this.settings.schedule        = Program.schedule;  
 	this.settings.vehicleComment  = Program.vehicleComment;
 	this.settings.customerComment = Program.customerComment;
 
-
-	if( 'now' !== Program.run ) {
-		var cron     = Later.parse.cron( Program.run );	
+	if( 'now' !== Program.schedule ) {
+		var cron     = Later.parse.cron( Program.schedule );	
 		var schedule = Later.schedule( cron ).next( 2 );
 		var interval = Moment( schedule[1] ).diff( schedule[0], 'hours', true );
 
 		this.settings.interval = interval;
 	}
 	else {
-		this.settings.interval = 2;
+		this.settings.interval = Program.interval;
 	}
 
   Logger.debug( 'Initializiation Complete', {
@@ -90,7 +116,7 @@ app.configCheck = function configCheck() {
 	  process.exit( 0 );
 	}
 
-	if( !app.get( 'email' ) ) {
+	if( !app.get( 'email' ).to ) {
 
 	  log.warn( 'No Email Address Supplied' );
 	  process.exit( 0 );
@@ -231,10 +257,11 @@ app.formatVehicleInfo = function formatVehicleInfo( lead ) {
 }
 
 
-app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
-	var payload, dealer;
+app.adfPayload = function adfPayload( lead ) {
+	var log, dealer, payload;
 
-	dealer   = app.get( 'dealer' );
+	log    = app.get( 'log' );
+	dealer = app.get( 'dealer' );
 
   payload  = '<?ADF version "1.0"?>';
 	payload += '<?XML version "1.0"?>';
@@ -281,35 +308,151 @@ app.leadXMLADFPayload = function leadXMLADFPayload( lead ) {
 	payload +=   '</prospect>';
 	payload += '</adf>';
 
-	lead['payload'] = payload;
+	lead[ 'adfPayload' ] = payload;
+
+	log.debug( 'ADF Payload Built' );
 
 	return lead;
 };
 
 
-app.sendLead = function sendLead( lead ) {
-	var log, email, dealer, mail; 
+app.htmlPayload = function htmlPayload( lead ) {
+	var log, dealer, html;
 
-	log    = app.get( 'log'    ); 
+	log    = app.get( 'log'    );
+	dealer = app.get( 'dealer' );
+
+	html  = '<h1>Hello' +dealer+',</h1>';
+	html += '<p>'+lead.full_name+' <'+lead.email+'> has submitted a request via Facebook and has been uploaded to your CRM.</p>';
+	html += '<table><thead><tr><th>Make</th><th>Model</th><th>Year</th></tr></thead>';
+	html += '<tbody><tr>';
+	html += '<td>'+lead.vehicle_make+'</td>';
+	html += '<td>'+lead.vehicle_model+'</td>';
+	html += '<td>'+lead.vehicle_year+'</td>';
+	html += '</tr></table>';
+
+	if( lead.customer_comment ) {
+
+		html += '<h3>Customer Comments</h3>';
+		html += '<p>'+lead.customer_comment+'</p>';
+
+	}
+
+	if( lead.vehicle_comment ) {
+
+		html += '<h3>Vehicle Comments</h3>';
+		html += '<p>'+lead.vehicle_comment+'</p>';
+
+	}	
+
+	lead[ 'htmlPayload' ] = html;
+
+	log.debug( 'HTML Payload Built' );	
+
+	return lead;
+};
+
+
+app.textPayload = function textPayload( lead ) {
+	var log, dealer, text;
+
+	log    = app.get( 'log'    );
+	dealer = app.get( 'dealer' );
+
+	text  = 'Hello '+dealer+','+OS.EOL;
+	text += lead.full_name+' <'+lead.email+'> has submitted a request via Facebook and has been uploaded to your CRM.'+OS.EOL;
+	text += 'Make: ' +lead.vehicle_make+OS.EOL;
+	text += 'Model: '+lead.vehicle_model+OS.EOL;
+	text += 'Year: ' +lead.vehicle_year+OS.EOL;
+	text += OS.EOL;
+
+	if( lead.customer_comment ) {
+
+		text += 'Customer Comments'+OS.EOL;
+		text += lead.customer_comment+OS.EOL;
+		text += OS.EOL;
+
+	}
+
+	if( lead.vehicle_comment ) {
+
+		text += 'Vehicle Comments'+OS.EOL;
+		text += lead.vehicle_comment+OS.EOL;
+		text += OS.EOL;
+
+	}	
+
+	lead[ 'textPayload' ] = text;	
+
+	return lead;
+};
+
+
+app.buildMessage = function buildMessage( lead ) {
+	var email, dealer, options = {};
+
 	email  = app.get( 'email'  );
 	dealer = app.get( 'dealer' );
-	mail   = app.get( 'mail'   );
 
-	log.debug( 'Sending lead', {
-		'name': lead.full_name
+	options = {
+		'from': 'Workshop Digital <mailgun@mg.workshopdigital.com>',		
+		'to': email.to,
+		'subject': 'FB Lead',
+		'text': lead.textPayload,
+		'html': lead.htmlPayload,
+		'alternatives': [
+			{ 
+				'contentType': 'application/xml',
+				'content': lead.adfPayload 
+			}
+		]
+	};
+
+	if( email.cc ) {
+		options[ 'cc' ] = email.cc;
+	}
+
+	if( email.bcc ) {
+		options[ 'bcc' ] = email.bcc;
+	}
+
+	if( email.replyTo ) {
+		options[ 'Reply-To' ] = email.replyTo;
+	}			
+
+	return Promise.promisifyAll( Composer( options ) )
+	.buildAsync()
+	.then( function( message ) {
+		return {
+			'to': email.to,
+			'from': 'Workshop Digital <mailgun@mg.workshopdigital.com>',
+			'message': message.toString( 'ascii' )
+		};
 	});
+}
 
-	return mail.messages.create( Config.mailgun.domain, {
-		'from': 'Workshop Digital <mailgun@mg.workshopdigital.com>',
-		'to':    email,
-		'subject': 'FB Lead ' + dealer +' '+ lead.full_name,
-		'html': lead.payload
-	})
-	.then( function( response ) {
 
-		log.debug( 'Lead Sent', {
-			'Response': response
-		});
+app.sendLead = function sendLead( message ) {
+	var log, email, dealer, mail, options; 
+
+	log     = app.get( 'log'    ); 
+	email   = app.get( 'email'  );
+	dealer  = app.get( 'dealer' );
+	mail    = app.get( 'mailer' );
+	
+	options = {
+		'headers': 
+			{
+				'content-type': 'multipart/form-data'
+			}
+	};
+	// log.debug( 'Sending lead', {
+	// 	'name': lead.full_name
+	// });
+
+	return mail.messages().sendMime( message, function( err, body ) {
+		Logger.debug( body );
+
 	});
 };
 
@@ -347,8 +490,11 @@ app.run = function run() {
 	.tap( app.leadCount )
 	.map( app.flattenLead )
 	.map( app.formatVehicleInfo )
-	.map( app.leadXMLADFPayload )
-	// .map( app.sendLead )
+	.map( app.adfPayload )
+	.map( app.htmlPayload )
+	.map( app.textPayload )
+	.map( app.buildMessage )
+	.map( app.sendLead )
 	.catch( function( e ) {
 		log.error( e );
 		process.exit( 1 );

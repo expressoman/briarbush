@@ -18,9 +18,12 @@
   "homepage": "https://github.com/WorkshopDigital/briarbush#readme",
   "dependencies": {
     "bluebird": "^3.4.6",
+    "buildmail": "^4.0.1",
     "commander": "^2.9.0",
     "later": "^1.2.0",
+    "mailgun-js": "^0.8.1",
     "mailgun.js": "^2.0.1",
+    "mimelib": "^0.3.0",
     "moment-timezone": "^0.5.10",
     "node-schedule": "^1.2.0",
     "request": "^2.79.0",
